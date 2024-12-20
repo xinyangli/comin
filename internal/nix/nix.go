@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,8 @@ import (
 // nixosConfigurations.MACHINE.config.services.comin.machineId and
 // returns (machine-id, nil) is comin.machineId is set, ("", nil) otherwise.
 func getExpectedMachineId(path, hostname string) (machineId string, err error) {
+	machineId = ""
+	return
 	expr := fmt.Sprintf("%s#nixosConfigurations.%s.config.services.comin.machineId", path, hostname)
 	args := []string{
 		"eval",
@@ -71,21 +74,20 @@ func Eval(ctx context.Context, flakeUrl, hostname string) (drvPath string, outPa
 }
 
 func ShowDerivation(ctx context.Context, flakeUrl, hostname string) (drvPath string, outPath string, err error) {
-	installable := fmt.Sprintf("%s#nixosConfigurations.%s.config.system.build.toplevel", flakeUrl, hostname)
-	args := []string{
-		"show-derivation",
-		installable,
-		"-L",
-		"--show-trace",
+	resp, err := http.Get(fmt.Sprintf("https://raw.githubusercontent.com/xinyangli/nixos-config/refs/heads/deploy-comin-eval/eval/%s.json", hostname))
+	// TODO: Error message
+	if err != nil {
+		return
 	}
-	var stdout bytes.Buffer
-	err = runNixCommand(args, &stdout, os.Stderr)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return
 	}
 
 	var output map[string]Derivation
-	err = json.Unmarshal(stdout.Bytes(), &output)
+	err = json.Unmarshal(body, &output)
 	if err != nil {
 		return
 	}
@@ -145,6 +147,19 @@ func Build(ctx context.Context, drvPath string) (err error) {
 	args := []string{
 		"build",
 		fmt.Sprintf("%s^*", drvPath),
+		"-L",
+		"--no-link"}
+	err = runNixCommand(args, os.Stdout, os.Stderr)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func RemoteBuild(ctx context.Context, outPath string) (err error) {
+	args := []string{
+		"build",
+		fmt.Sprintf("%s", outPath),
 		"-L",
 		"--no-link"}
 	err = runNixCommand(args, os.Stdout, os.Stderr)

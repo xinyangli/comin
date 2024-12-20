@@ -218,7 +218,7 @@ func (g Generation) Build(ctx context.Context) Generation {
 	fn := func() {
 		ctx, cancel := context.WithTimeout(ctx, g.evalTimeout)
 		defer cancel()
-		err := g.buildFunc(ctx, g.DrvPath)
+		err := g.buildFunc(ctx, g.OutPath)
 		buildResult := BuildResult{
 			EndAt: time.Now().UTC(),
 		}
