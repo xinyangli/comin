@@ -190,7 +190,6 @@ func (g *Garnix) Eval(ctx context.Context, flakeUrl, hostname string) (drvPath s
 				uploadedToCache = build.UploadedToCache
 				if !uploadedToCache {
 					logrus.Infof("garnix: not uploaded to cache yet, retrying...")
-					time.Sleep(g.retryInterval * time.Second)
 					break
 				}
 
@@ -203,6 +202,7 @@ func (g *Garnix) Eval(ctx context.Context, flakeUrl, hostname string) (drvPath s
 				return
 			}
 		}
+                time.Sleep(g.retryInterval)
 	}
 
 	logrus.Errorf("garnix: %s not found in build", hostname)
