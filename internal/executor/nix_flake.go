@@ -27,6 +27,9 @@ func NewGitNixFlake(systemAttr, repositoryPath string, submodules bool) (*GitNix
 }
 
 func (n *GitNixFlake) ReadMachineId() (string, error) {
+	if n.systemAttr == "homeConfigurations" {
+		return "", nil
+	}
 	if n.systemAttr == "darwinConfigurations" {
 		return utils.ReadMachineIdDarwin()
 	}
@@ -34,6 +37,9 @@ func (n *GitNixFlake) ReadMachineId() (string, error) {
 }
 
 func (n *GitNixFlake) NeedToReboot(outPath, operation string) bool {
+	if n.systemAttr == "homeConfigurations" {
+		return false
+	}
 	if n.systemAttr == "darwinConfigurations" {
 		// TODO: Implement proper reboot detection for Darwin
 		// Unlike NixOS which has /run/current-system vs /run/booted-system paths,
@@ -101,6 +107,7 @@ type DerivationOutput struct {
 type Show struct {
 	NixosConfigurations  map[string]struct{} `json:"nixosConfigurations"`
 	DarwinConfigurations map[string]struct{} `json:"darwinConfigurations"`
+	HomeConfigurations   map[string]struct{} `json:"homeConfigurations"`
 }
 
 func (n *GitNixFlake) List(flakeUrl string) (hosts []string, err error) {
@@ -123,9 +130,12 @@ func (n *GitNixFlake) List(flakeUrl string) (hosts []string, err error) {
 	}
 
 	var configurations map[string]struct{}
-	if n.systemAttr == "darwinConfigurations" {
+	switch n.systemAttr {
+	case "homeConfigurations":
+		configurations = output.HomeConfigurations
+	case "darwinConfigurations":
 		configurations = output.DarwinConfigurations
-	} else {
+	default:
 		configurations = output.NixosConfigurations
 	}
 

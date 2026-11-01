@@ -123,7 +123,7 @@ func (s *Store) NewGeneration(hostname, repositoryDir, systemAttr string, rs *pr
 	}
 
 	g = protobuf.Generation{
-		Uuid:   uuid.New().String(),
+		Uuid: uuid.New().String(),
 		Source: &protobuf.Source{
 			Source: &protobuf.Source_Git{
 				Git: &protobuf.Git{
@@ -142,9 +142,9 @@ func (s *Store) NewGeneration(hostname, repositoryDir, systemAttr string, rs *pr
 				},
 			},
 		},
-		EvalStatus:   EvalInit.String(),
-		BuildStatus: BuildInit.String(),
-		AttemptNumber: 0,
+		EvalStatus:         EvalInit.String(),
+		BuildStatus:        BuildInit.String(),
+		AttemptNumber:      0,
 		BuildAttemptsLimit: int32(buildAttemptsLimit),
 	}
 	s.persisted.Generations = append(s.persisted.Generations, &g)
@@ -200,7 +200,8 @@ func GenerationShow(g *protobuf.Generation) {
 func (s *Store) generationsGC() {
 	alive := make([]*protobuf.Generation, 0)
 	for _, g := range s.persisted.Generations {
-		if g == s.lastEvalStarted || g == s.lastEvalFinished || g == s.lastBuildStarted || g == s.lastBuildFinished {
+		if g.EvalStatus == EvalInit.String() || g.EvalStatus == Evaluating.String() || g.BuildStatus == Building.String() ||
+			g == s.lastEvalStarted || g == s.lastEvalFinished || g == s.lastBuildStarted || g == s.lastBuildFinished {
 			alive = append(alive, g)
 		}
 	}

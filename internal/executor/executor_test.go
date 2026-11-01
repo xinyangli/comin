@@ -9,6 +9,29 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestHomeManagerSkipsMachineChecks(t *testing.T) {
+	e, err := NewGitNixFlake("homeConfigurations", "/test/path", false)
+	assert.NoError(t, err)
+	machineID, err := e.ReadMachineId()
+	assert.NoError(t, err)
+	assert.Empty(t, machineID)
+	assert.False(t, e.NeedToReboot("/nonexistent", "switch"))
+}
+
+func TestNewHomeManagerExecutor(t *testing.T) {
+	e, err := New("flake", "/test/path", false, true)
+	assert.NoError(t, err)
+	flakeExecutor, ok := e.(*GitNixFlake)
+	assert.True(t, ok)
+	assert.Equal(t, "homeConfigurations", flakeExecutor.systemAttr)
+}
+
+func TestNewHomeManagerExecutorRequiresFlake(t *testing.T) {
+	e, err := New("nix", "/test/path", false, true)
+	assert.Nil(t, e)
+	assert.EqualError(t, err, "home-manager deployment requires repository type 'flake'")
+}
+
 func TestNixExecutorWithDarwinConfiguration(t *testing.T) {
 	// Test creating a NixExecutor with Darwin configuration
 	executor, err := NewGitNixFlake("darwinConfigurations", "/test/path", false)

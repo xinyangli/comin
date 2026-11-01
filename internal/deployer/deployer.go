@@ -51,6 +51,7 @@ type Deployer struct {
 	runnerIsSuspended atomic.Bool
 	store             *store.Store
 	broker            *broker.Broker
+	homeManager       bool
 }
 
 func (d *Deployer) State() *protobuf.Deployer {
@@ -118,7 +119,7 @@ func Show(s *protobuf.Deployer, padding string) {
 	showDeployment(padding, s.Deployment)
 }
 
-func New(store *store.Store, deployFunc DeployFunc, previousDeployment *protobuf.Deployment, postDeploymentCommand string, b *broker.Broker) *Deployer {
+func New(store *store.Store, deployFunc DeployFunc, previousDeployment *protobuf.Deployment, postDeploymentCommand string, b *broker.Broker, homeManager bool) *Deployer {
 	if previousDeployment != nil {
 		logrus.Infof("deployer: initializing with previous deployment %s", previousDeployment.Uuid)
 	}
@@ -129,6 +130,7 @@ func New(store *store.Store, deployFunc DeployFunc, previousDeployment *protobuf
 		generationAvailableCh: make(chan struct{}, 1),
 		postDeploymentCommand: postDeploymentCommand,
 		broker:                b,
+		homeManager:           homeManager,
 
 		resumeCh: make(chan struct{}, 1),
 	}
@@ -229,7 +231,10 @@ func (d *Deployer) Run(ctx context.Context) {
 			d.GenerationToDeploy = nil
 			d.mu.Unlock()
 			logrus.Infof("deployer: deploying generation %s with the submitted operation %s", g.Uuid, operationSubmitted)
-			booted, current := utils.GetBootedAndCurrentStorepaths()
+			booted, current := "", ""
+			if !d.homeManager {
+				booted, current = utils.GetBootedAndCurrentStorepaths()
+			}
 			dpl := d.store.NewDeployment(g, operationSubmitted, d.Reason, booted, current)
 			operationComputed := dpl.Operation
 			d.mu.Lock()

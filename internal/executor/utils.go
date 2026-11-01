@@ -20,6 +20,9 @@ import (
 // GetExpectedMachineId evals nixosConfigurations or darwinConfigurations based on systemAttr
 // returns (machine-id, nil) is comin.machineId is set, ("", nil) otherwise.
 func getExpectedMachineId(ctx context.Context, path, hostname, systemAttr string, stdout, stderr io.WriteCloser) (machineId string, err error) {
+	if systemAttr == "homeConfigurations" {
+		return "", nil
+	}
 	expr := fmt.Sprintf("%s#%s.\"%s\".config.services.comin.machineId", path, systemAttr, hostname)
 	args := []string{
 		"eval",
@@ -158,8 +161,15 @@ func parseDerivationWithFlake(buf bytes.Buffer) (drvPath string, outPath string,
 	return
 }
 
+func configurationInstallable(flakeURL, hostname, systemAttr string) string {
+	if systemAttr == "homeConfigurations" {
+		return fmt.Sprintf("%s#%s.\"%s\".activationPackage", flakeURL, systemAttr, hostname)
+	}
+	return fmt.Sprintf("%s#%s.\"%s\".config.system.build.toplevel", flakeURL, systemAttr, hostname)
+}
+
 func showDerivationWithFlake(ctx context.Context, flakeUrl, hostname, systemAttr string, stdout, stderr io.WriteCloser) (drvPath string, outPath string, err error) {
-	installable := fmt.Sprintf("%s#%s.\"%s\".config.system.build.toplevel", flakeUrl, systemAttr, hostname)
+	installable := configurationInstallable(flakeUrl, hostname, systemAttr)
 	args := []string{
 		"derivation",
 		"show",
@@ -242,10 +252,30 @@ func cominUnitFileHashDarwin() string {
 }
 
 func switchToConfiguration(operation string, outPath string, dryRun bool, systemAttr string, stdout, stderr io.WriteCloser) error {
+	if systemAttr == "homeConfigurations" {
+		return switchToConfigurationHomeManager(operation, outPath, dryRun, stdout, stderr)
+	}
 	if systemAttr == "darwinConfigurations" {
 		return switchToConfigurationDarwin(operation, outPath, dryRun, stdout, stderr)
 	}
 	return switchToConfigurationLinux(operation, outPath, dryRun, stdout, stderr)
+}
+
+func switchToConfigurationHomeManager(operation string, outPath string, dryRun bool, stdout, stderr io.WriteCloser) error {
+	activateExe := filepath.Join(outPath, "activate")
+	logrus.Infof("nix: running '%s'", activateExe)
+	if dryRun {
+		logrus.Infof("nix: dry-run enabled: '%s' has not been executed", activateExe)
+		return nil
+	}
+	cmd := exec.Command(activateExe)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("home-manager activation command %s fails with %w", activateExe, err)
+	}
+	logrus.Infof("nix: Home Manager activation successfully terminated")
+	return nil
 }
 
 func switchToConfigurationLinux(operation string, outPath string, dryRun bool, stdout, stderr io.WriteCloser) error {
@@ -295,10 +325,20 @@ func switchToConfigurationDarwin(operation string, outPath string, dryRun bool, 
 }
 
 func deploy(ctx context.Context, outPath, operation, systemAttr string, profilePaths []string, stdout, stderr io.WriteCloser) (needToRestartComin bool, profilePath string, err error) {
+	if systemAttr == "homeConfigurations" {
+		return deployHomeManager(ctx, outPath, operation, profilePaths, stdout, stderr)
+	}
 	if systemAttr == "darwinConfigurations" {
 		return deployDarwin(ctx, outPath, operation, profilePaths, stdout, stderr)
 	}
 	return deployLinux(ctx, outPath, operation, profilePaths, stdout, stderr)
+}
+
+func deployHomeManager(ctx context.Context, outPath, operation string, profilePaths []string, stdout, stderr io.WriteCloser) (needToRestartComin bool, profilePath string, err error) {
+	if err = switchToConfigurationHomeManager(operation, outPath, false, stdout, stderr); err != nil {
+		return
+	}
+	return false, "", nil
 }
 
 func deployLinux(ctx context.Context, outPath, operation string, profilePaths []string, stdout, stderr io.WriteCloser) (needToRestartComin bool, profilePath string, err error) {

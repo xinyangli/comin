@@ -13,9 +13,12 @@ import (
 type EvalFunc func(ctx context.Context, source *protobuf.Source, stdout, stderr io.WriteCloser) (drvPath string, outPath string, machineId string, err error)
 type BuildFunc func(ctx context.Context, drvPath string, stdout, stdin io.WriteCloser) error
 
-func New(repositoryType, repositoryPath string, submodules bool) (e Executor, err error) {
+func New(repositoryType, repositoryPath string, submodules, homeManager bool) (e Executor, err error) {
 	switch repositoryType {
 	case "flake":
+		if homeManager {
+			return NewGitNixFlakeHomeManager(repositoryPath, submodules)
+		}
 		if runtime.GOOS == "darwin" {
 			return NewGitNixFlakeDarwin(repositoryPath, submodules)
 		} else {
@@ -23,6 +26,9 @@ func New(repositoryType, repositoryPath string, submodules bool) (e Executor, er
 		}
 
 	case "nix":
+		if homeManager {
+			return nil, fmt.Errorf("home-manager deployment requires repository type 'flake'")
+		}
 		return NewGitNixNixOS(repositoryPath, submodules)
 	}
 	return e, fmt.Errorf("failed to create the executor: %s", err)
@@ -52,6 +58,12 @@ func NewGitNixFlakeNixOS(repositoryPath string, submodules bool) (e Executor, er
 func NewGitNixFlakeDarwin(repositoryPath string, submodules bool) (e Executor, err error) {
 	logrus.Info("executor: creating a nix-darwin flake executor")
 	e, err = NewGitNixFlake("darwinConfigurations", repositoryPath, submodules)
+	return
+}
+
+func NewGitNixFlakeHomeManager(repositoryPath string, submodules bool) (e Executor, err error) {
+	logrus.Info("executor: creating a Home Manager flake executor")
+	e, err = NewGitNixFlake("homeConfigurations", repositoryPath, submodules)
 	return
 }
 

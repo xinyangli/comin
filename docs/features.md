@@ -25,7 +25,7 @@
 - [x] Generation retention policies
 - [x] Stream logs
 - [ ] Desktop tray: https://github.com/nlewo/comin/pull/151
-- [ ] Home manager support: https://github.com/nlewo/comin/issues/11
+- [x] Standalone [Home Manager](./docs/howtos.md#how-to-deploy-a-standalone-home-manager-configuration) configurations on Linux
 - [ ] Auto reboot
 - [ ] No local evaluation mode with Niks3/Cachix pinning support https://github.com/nlewo/comin/pull/207
 

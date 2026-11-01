@@ -443,15 +443,40 @@ list of string
 
 
 
+## services\.comin\.homeManagerConfiguration
+
+
+
+The Home Manager flake configuration key to deploy, without the
+homeConfigurations\. prefix or \.activationPackage suffix\.
+This is independent of services\.comin\.hostname and is required
+for Home Manager deployments\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+""
+```
+
+
+
 ## services\.comin\.hostname
 
 
 
-The name of the configuration to evaluate and deploy\.
+The name of the NixOS or nix-darwin configuration to evaluate and deploy\.
 This value is used by comin to evaluate the flake output
 nixosConfigurations\.“\<hostname>” or darwinConfigurations\.“\<hostname>”\.
+It is not used to select Home Manager configurations\.
 Defaults to networking\.hostName - you MUST set either this option
-or networking\.hostName in your configuration\.
+or networking\.hostName in your system configuration\.
 
 
 
@@ -480,7 +505,8 @@ This is mainly useful for server migration: this allows
 to migrate a configuration from a machine to another
 machine (with different hardware for instance) without
 impacting both\.
-Note it is only used by comin at evaluation\.
+Note it is only used by comin at evaluation for NixOS and
+nix-darwin configurations; Home Manager deployments ignore it\.
 
 
 
@@ -758,7 +784,7 @@ string
 
 
 
-The switch-to-configuration operation to do on this branch\.
+The deployment operation for this branch\. Home Manager activates on switch and test, and rejects boot\.
 
 
 
@@ -812,7 +838,7 @@ string
 *Default:*
 
 ```nix
-testing-${config.services.comin.hostname}
+testing-${if cfg.homeManagerConfiguration != "" then cfg.homeManagerConfiguration else cfg.hostname}
 ```
 
 
@@ -821,7 +847,7 @@ testing-${config.services.comin.hostname}
 
 
 
-The switch-to-configuration operation to do on this branch\.
+The deployment operation for this branch\. Home Manager activates on switch and test, and rejects boot\.
 
 
 

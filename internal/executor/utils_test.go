@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -65,6 +66,36 @@ const drv_nix_2_31 string = `{
 }
 `
 
+func TestConfigurationInstallable(t *testing.T) {
+	tests := []struct {
+		name       string
+		systemAttr string
+		expected   string
+	}{
+		{
+			name:       "NixOS",
+			systemAttr: "nixosConfigurations",
+			expected:   `github:example/repo#nixosConfigurations."testuser@laptop".config.system.build.toplevel`,
+		},
+		{
+			name:       "Darwin",
+			systemAttr: "darwinConfigurations",
+			expected:   `github:example/repo#darwinConfigurations."testuser@laptop".config.system.build.toplevel`,
+		},
+		{
+			name:       "Home Manager",
+			systemAttr: "homeConfigurations",
+			expected:   `github:example/repo#homeConfigurations."testuser@laptop".activationPackage`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, configurationInstallable("github:example/repo", "testuser@laptop", tt.systemAttr))
+		})
+	}
+}
+
 func TestParseDerivationShortOutput(t *testing.T) {
 	// nix-instantiate can emit output with fewer than 2 ";"-separated
 	// elements (e.g. when the derivation eval fails or returns a bare
@@ -88,6 +119,12 @@ func TestParseDerivationWithFlake(t *testing.T) {
 	assert.Equal(t, "/nix/store/plbm2vvs61q9868g8wh3m191dslvpgwi-nixos-system-tilia-25.11.20260122.078d69f.drv", drvPath)
 	assert.Equal(t, "/nix/store/wc14lijvyzacwf6by6dfj4hq1qx8s745-nixos-system-tilia-25.11.20260122.078d69f", outPath)
 	assert.Nil(t, err)
+}
+
+func TestGetExpectedMachineIdHomeManager(t *testing.T) {
+	machineID, err := getExpectedMachineId(t.Context(), "/nonexistent", "testuser@laptop", "homeConfigurations", os.Stdout, os.Stderr)
+	assert.NoError(t, err)
+	assert.Empty(t, machineID)
 }
 
 func TestGetExpectedMachineId(t *testing.T) {
@@ -193,6 +230,26 @@ func TestCominUnitFileHash(t *testing.T) {
 			assert.IsType(t, "", result)
 		})
 	}
+}
+
+func TestDeployHomeManager(t *testing.T) {
+	outPath := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "arguments")
+	activate := filepath.Join(outPath, "activate")
+	script := "#!/bin/sh\nprintf '%s' \"$#\" > \"" + marker + "\"\n"
+	assert.NoError(t, os.WriteFile(activate, []byte(script), 0o700))
+
+	err := switchToConfigurationHomeManager("switch", outPath, true, os.Stdout, os.Stderr)
+	assert.NoError(t, err)
+	assert.NoFileExists(t, marker)
+
+	restart, profilePath, err := deployHomeManager(t.Context(), outPath, "switch", []string{filepath.Join(t.TempDir(), "missing-system-profile")}, os.Stdout, os.Stderr)
+	assert.NoError(t, err)
+	assert.False(t, restart)
+	assert.Empty(t, profilePath)
+	arguments, err := os.ReadFile(marker)
+	assert.NoError(t, err)
+	assert.Equal(t, "0", string(arguments))
 }
 
 func TestSwitchToConfiguration(t *testing.T) {

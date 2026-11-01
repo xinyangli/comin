@@ -2,6 +2,7 @@
   config,
   pkgs,
   lib,
+  stateDir ? "/var/lib/comin",
   ...
 }:
 let
@@ -11,7 +12,8 @@ in
 rec {
   cominConfig = {
     hostname = cfg.services.comin.hostname;
-    state_dir = "/var/lib/comin";
+    home_manager_configuration = cfg.services.comin.homeManagerConfiguration;
+    state_dir = stateDir;
     repository_type = cfg.services.comin.repositoryType;
     repository_subdir = cfg.services.comin.repositorySubdir;
     submodules = cfg.services.comin.submodules;

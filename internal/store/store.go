@@ -23,6 +23,7 @@ type Store struct {
 	bootEntryCapacity  int
 	successfulCapacity int
 	anyCapacity        int
+	homeManager        bool
 
 	lastEvalStarted   *protobuf.Generation
 	lastEvalFinished  *protobuf.Generation
@@ -32,7 +33,7 @@ type Store struct {
 	broker *broker.Broker
 }
 
-func New(broker *broker.Broker, filename, gcRootsDir string, bootEntryCapacity, successfulCapacity, anyCapacity int) (*Store, error) {
+func New(broker *broker.Broker, filename, gcRootsDir string, bootEntryCapacity, successfulCapacity, anyCapacity int, homeManager bool) (*Store, error) {
 	if bootEntryCapacity < 1 {
 		return nil, fmt.Errorf("store: bootEntryCapacity cannot be < 1")
 	}
@@ -57,6 +58,7 @@ func New(broker *broker.Broker, filename, gcRootsDir string, bootEntryCapacity, 
 		bootEntryCapacity:  bootEntryCapacity,
 		successfulCapacity: successfulCapacity,
 		anyCapacity:        anyCapacity,
+		homeManager:        homeManager,
 		persisted:          data,
 		broker:             broker,
 	}
@@ -81,8 +83,9 @@ func (s *Store) DeploymentList() []*protobuf.Deployment {
 }
 
 func (s *Store) LastDeployment() (ok bool, d *protobuf.Deployment) {
-	if len(s.DeploymentList()) > 1 {
-		return true, s.DeploymentList()[0]
+	deployments := s.DeploymentList()
+	if (s.homeManager && len(deployments) > 0) || len(deployments) > 1 {
+		return true, deployments[0]
 	}
 	return
 }
@@ -123,36 +126,39 @@ func (s *Store) Load() (err error) {
 		s.persisted.Deployer = &protobuf.DeployerState{}
 	}
 
-	booted, current := utils.GetBootedAndCurrentStorepaths()
+	booted, current := "", ""
+	if !s.homeManager {
+		booted, current = utils.GetBootedAndCurrentStorepaths()
 
-	// If the booted deployment has not been found in the deployment persisted list, we create a dummy one. This could happen when starting from an empty store.json file.
-	if s.GetDeploymentByOutpath(booted) == nil {
-		d := &protobuf.Deployment{
-			Uuid: uuid.New().String(),
-			Generation: &protobuf.Generation{
-				OutPath: booted,
-			},
-			Operation: types.OperationBoot,
-			Reason:    "Dummy deployment because not found in the deployment list",
-			Status:    StatusToString(Done),
+		// If the booted deployment has not been found in the deployment persisted list, we create a dummy one. This could happen when starting from an empty store.json file.
+		if s.GetDeploymentByOutpath(booted) == nil {
+			d := &protobuf.Deployment{
+				Uuid: uuid.New().String(),
+				Generation: &protobuf.Generation{
+					OutPath: booted,
+				},
+				Operation: types.OperationBoot,
+				Reason:    "Dummy deployment because not found in the deployment list",
+				Status:    StatusToString(Done),
+			}
+			logrus.Infof("store: dummy deployment %s created for the currently booted storepath %s", d.Uuid, d.Generation.OutPath)
+			s.persisted.Deployments = append(s.persisted.Deployments, d)
 		}
-		logrus.Infof("store: dummy deployment %s created for the currently booted storepath %s", d.Uuid, d.Generation.OutPath)
-		s.persisted.Deployments = append(s.persisted.Deployments, d)
-	}
 
-	// If the booted deployment has not been found in the deployment persisted list, we create a dummy one. This could happen when starting from an empty store.json file.
-	if s.GetDeploymentByOutpath(current) == nil {
-		d := &protobuf.Deployment{
-			Uuid: uuid.New().String(),
-			Generation: &protobuf.Generation{
-				OutPath: current,
-			},
-			Operation: types.OperationSwitch,
-			Reason:    "Dummy deployment because not found in the deployment list",
-			Status:    StatusToString(Done),
+		// If the current deployment has not been found in the deployment persisted list, we create a dummy one. This could happen when starting from an empty store.json file.
+		if s.GetDeploymentByOutpath(current) == nil {
+			d := &protobuf.Deployment{
+				Uuid: uuid.New().String(),
+				Generation: &protobuf.Generation{
+					OutPath: current,
+				},
+				Operation: types.OperationSwitch,
+				Reason:    "Dummy deployment because not found in the deployment list",
+				Status:    StatusToString(Done),
+			}
+			logrus.Infof("store: dummy deployment %s created for the currently switched storepath %s", d.Uuid, d.Generation.OutPath)
+			s.persisted.Deployments = append(s.persisted.Deployments, d)
 		}
-		logrus.Infof("store: dummy deployment %s created for the currently switched storepath %s", d.Uuid, d.Generation.OutPath)
-		s.persisted.Deployments = append(s.persisted.Deployments, d)
 	}
 
 	s.updateDataDeployments(booted, current, nil)

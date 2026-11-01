@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"time"
@@ -32,12 +33,29 @@ func getGitFromGeneration(g *protobuf.Generation) *protobuf.Git {
 }
 
 var configFilepath string
+var homeManager bool
+
+func getConfigurationName(hostname, homeManagerConfiguration string, homeManager bool) (string, error) {
+	if !homeManager {
+		return hostname, nil
+	}
+	if homeManagerConfiguration == "" {
+		return "", fmt.Errorf("home-manager configuration name must be set with home_manager_configuration")
+	}
+	return homeManagerConfiguration, nil
+}
 
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run comin to deploy your published configurations",
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.Read(configFilepath)
+		if err != nil {
+			logrus.Error(err)
+			os.Exit(1)
+		}
+
+		configurationName, err := getConfigurationName(cfg.Hostname, cfg.HomeManagerConfiguration, homeManager)
 		if err != nil {
 			logrus.Error(err)
 			os.Exit(1)
@@ -61,7 +79,7 @@ var runCmd = &cobra.Command{
 		}
 
 		var executor executorPkg.Executor
-		executor, err = executorPkg.New(cfg.RepositoryType, gitConfig.Path, gitConfig.Submodules)
+		executor, err = executorPkg.New(cfg.RepositoryType, gitConfig.Path, gitConfig.Submodules, homeManager)
 		if err != nil {
 			logrus.Error(err)
 			os.Exit(1)
@@ -78,7 +96,7 @@ var runCmd = &cobra.Command{
 		gcRootsDir := path.Join(cfg.StateDir, "gcroots")
 		broker := brokerPkg.New()
 		broker.Start()
-		store, err := storePkg.New(broker, storeFilename, gcRootsDir, cfg.Retention.DeploymentBootEntryCapacity, cfg.Retention.DeploymentSuccessfulCapacity, cfg.Retention.DeploymentAnyCapacity)
+		store, err := storePkg.New(broker, storeFilename, gcRootsDir, cfg.Retention.DeploymentBootEntryCapacity, cfg.Retention.DeploymentSuccessfulCapacity, cfg.Retention.DeploymentAnyCapacity, homeManager)
 		if err != nil {
 			logrus.Error(err)
 			os.Exit(1)
@@ -109,8 +127,8 @@ var runCmd = &cobra.Command{
 		sched := scheduler.New()
 		sched.FetchRemotes(fetcher, cfg.Remotes)
 
-		builder := builder.New(store, executor, broker, gitConfig.Path, gitConfig.Dir, cfg.SystemAttr, cfg.Hostname, gitConfig.Submodules, time.Duration(cfg.EvalTimeout)*time.Second, time.Duration(cfg.BuildTimeout)*time.Second, cfg.BuildAttemptsLimit, time.Duration(cfg.BuildRetryTimer)*time.Second, cfg.PostBuildCommand)
-		deployer := deployer.New(store, executor.Deploy, lastDeployment, cfg.PostDeploymentCommand, broker)
+		builder := builder.New(store, executor, broker, gitConfig.Path, gitConfig.Dir, cfg.SystemAttr, configurationName, gitConfig.Submodules, time.Duration(cfg.EvalTimeout)*time.Second, time.Duration(cfg.BuildTimeout)*time.Second, cfg.BuildAttemptsLimit, time.Duration(cfg.BuildRetryTimer)*time.Second, cfg.PostBuildCommand)
+		deployer := deployer.New(store, executor.Deploy, lastDeployment, cfg.PostDeploymentCommand, broker, homeManager)
 
 		mode, err := manager.ParseMode(cfg.BuildConfirmer.Mode)
 		if err != nil {
@@ -133,7 +151,7 @@ var runCmd = &cobra.Command{
 			configurationOperations[r.Name][r.Branches.Main.Name] = r.Branches.Main.Operation
 			configurationOperations[r.Name][r.Branches.Testing.Name] = r.Branches.Testing.Operation
 		}
-		manager := manager.New(store, metrics, sched, fetcher, builder, deployer, machineId, cfg.Hostname, executor, buildConfirmer, deployConfirmer, broker, configurationOperations)
+		manager := manager.New(store, metrics, sched, fetcher, builder, deployer, machineId, configurationName, executor, buildConfirmer, deployConfirmer, broker, configurationOperations)
 
 		http.Serve(manager,
 			metrics,
@@ -150,6 +168,7 @@ var runCmd = &cobra.Command{
 
 func init() {
 	runCmd.PersistentFlags().StringVarP(&configFilepath, "config", "", "", "the configuration file path")
+	runCmd.PersistentFlags().BoolVar(&homeManager, "home-manager", false, "deploy a Home Manager configuration")
 	_ = runCmd.MarkPersistentFlagRequired("config")
 	rootCmd.AddCommand(runCmd)
 }

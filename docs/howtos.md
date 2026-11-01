@@ -92,6 +92,34 @@ deploys a configuration found in the flake output
 output and run comin on the target machine.
 
 
+## How to deploy a standalone Home Manager configuration
+
+On Linux, the `homeManagerModules.comin` flake output installs comin as a
+systemd user service. Each comin instance deploys one
+`homeConfigurations.<name>` output from a flake repository. The configuration
+name defaults to `home.username` and can be set independently of the machine
+hostname:
+
+```nix
+{
+  services.comin = {
+    enable = true;
+    homeManagerConfiguration = "alice@laptop";
+    remotes = [
+      {
+        name = "origin";
+        url = "https://example.org/alice/home-config";
+      }
+    ];
+  };
+}
+```
+
+Import `comin.homeManagerModules.comin` in that Home Manager configuration.
+Comin builds its `activationPackage` and runs `activate` as the current user.
+Both `switch` and `test` branch operations activate the configuration; `boot`
+is not supported. State is stored under `${config.xdg.dataHome}/comin`.
+
 ## How to use comin without Nix flake
 
 comin supports deploying configuration from a repository that doesn't

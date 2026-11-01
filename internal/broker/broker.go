@@ -3,6 +3,7 @@ package broker
 import (
 	"bufio"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,12 +77,12 @@ func (b *Broker) Subscribe(name string) chan *protobuf.Event {
 // If the filter is nil, all events will be delivered (same as Subscribe())
 func (b *Broker) SubscribeWithFilter(name string, filter Filter) chan *protobuf.Event {
 	msgCh := make(chan *protobuf.Event, 5)
-	
+
 	// Default to accept all events if no filter is provided
 	if filter == nil {
 		filter = func(*protobuf.Event) bool { return true }
 	}
-	
+
 	b.mu.Lock()
 	b.subscribers = append(b.subscribers, &subscription{
 		name:    name,
@@ -89,14 +90,14 @@ func (b *Broker) SubscribeWithFilter(name string, filter Filter) chan *protobuf.
 		filter:  filter,
 	})
 	b.mu.Unlock()
-	
+
 	return msgCh
 }
 
 func (b *Broker) Unsubscribe(msgCh chan *protobuf.Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	
+
 	for i, sub := range b.subscribers {
 		if sub.channel == msgCh {
 			// Remove this subscription by swapping with the last element and popping
@@ -109,6 +110,38 @@ func (b *Broker) Unsubscribe(msgCh chan *protobuf.Event) {
 
 func (b *Broker) Publish(msg *protobuf.Event) {
 	b.publishCh <- msg
+}
+
+func (b *Broker) publishLogLines(r io.Reader, obj, objUuid, source string) {
+	reader := bufio.NewReader(r)
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			line = strings.TrimSuffix(line, "\n")
+			line = strings.TrimSuffix(line, "\r")
+			logrus.Infof("logs: %s", line)
+			b.Publish(
+				&protobuf.Event{
+					Type: &protobuf.Event_Log_{
+						Log: &protobuf.Event_Log{
+							ObjectType: obj,
+							ObjectUuid: objUuid,
+							Type: &protobuf.Event_Log_Line_{
+								Line: &protobuf.Event_Log_Line{
+									Source: source,
+									Msg:    line,
+								},
+							},
+						},
+					},
+					CreatedAt: timestamppb.New(time.Now().UTC()),
+				},
+			)
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // GetLogger return a stdout et stderr writers. They have to be closed by the caller.
@@ -136,56 +169,14 @@ func (b *Broker) GetLogger(obj, objUuid string) (stdout, stderr io.WriteCloser) 
 	go func() {
 		defer wg.Done()
 		logrus.Debug("broker: starting to scan stdout")
-		scanner := bufio.NewScanner(stdoutR)
-		for scanner.Scan() {
-			line := scanner.Text()
-			logrus.Infof("logs: %s", line)
-			b.Publish(
-				&protobuf.Event{
-					Type: &protobuf.Event_Log_{
-						Log: &protobuf.Event_Log{
-							ObjectType: obj,
-							ObjectUuid: objUuid,
-							Type: &protobuf.Event_Log_Line_{
-								Line: &protobuf.Event_Log_Line{
-									Source: "stdout",
-									Msg:    line,
-								},
-							},
-						},
-					},
-					CreatedAt: timestamppb.New(time.Now().UTC()),
-				},
-			)
-		}
+		b.publishLogLines(stdoutR, obj, objUuid, "stdout")
 		logrus.Debug("broken: stdout/" + obj + "/" + objUuid + ": stdout closed")
 	}()
 
 	go func() {
 		defer wg.Done()
 		logrus.Debug("broker: starting to scan stderr")
-		scanner := bufio.NewScanner(stderrR)
-		for scanner.Scan() {
-			line := scanner.Text()
-			logrus.Infof("logs: %s", line)
-			b.Publish(
-				&protobuf.Event{
-					Type: &protobuf.Event_Log_{
-						Log: &protobuf.Event_Log{
-							ObjectType: obj,
-							ObjectUuid: objUuid,
-							Type: &protobuf.Event_Log_Line_{
-								Line: &protobuf.Event_Log_Line{
-									Source: "stderr",
-									Msg:    line,
-								},
-							},
-						},
-					},
-					CreatedAt: timestamppb.New(time.Now().UTC()),
-				},
-			)
-		}
+		b.publishLogLines(stderrR, obj, objUuid, "stderr")
 		logrus.Debug("broken: stdout/" + obj + "/" + objUuid + ": stdout closed")
 	}()
 

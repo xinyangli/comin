@@ -7,10 +7,47 @@ import (
 	"time"
 
 	"github.com/nlewo/comin/internal/broker"
-	"github.com/nlewo/comin/pkg/protobuf"
 	"github.com/nlewo/comin/internal/store"
+	"github.com/nlewo/comin/pkg/protobuf"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestDeployerHomeManager(t *testing.T) {
+	operations := make(chan string, 1)
+	deployFunc := func(ctx context.Context, outPath, operation string, profilePaths []string, stdout, stderr io.WriteCloser) (bool, string, error) {
+		operations <- operation
+		return false, "", nil
+	}
+
+	tmp := t.TempDir()
+	bk := broker.New()
+	bk.Start()
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, true)
+	assert.NoError(t, err)
+	d := New(s, deployFunc, nil, "", bk, true)
+	d.Run(t.Context())
+	d.Submit(&protobuf.Generation{Uuid: "generation-1", OutPath: tmp}, "switch", false, "")
+
+	select {
+	case operation := <-operations:
+		assert.Equal(t, "switch", operation)
+	case <-time.After(5 * time.Second):
+		t.Fatal("deploy was not called")
+	}
+
+	var deployment *protobuf.Deployment
+	select {
+	case deployment = <-d.DeploymentDoneCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("deployment did not finish")
+	}
+	assert.Equal(t, "switch", deployment.Operation)
+	assert.Empty(t, deployment.ProfilePath)
+	assert.False(t, deployment.RestartComin.Value)
+	assert.Equal(t, store.StatusToString(store.Done), deployment.Status)
+	assert.Len(t, s.DeploymentList(), 1)
+	assert.NotEmpty(t, s.DeploymentList()[0].Generation.OutPath)
+}
 
 func TestDeployerBasic(t *testing.T) {
 	deployDone := make(chan struct{})
@@ -23,9 +60,9 @@ func TestDeployerBasic(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
-	d := New(s, deployFunc, nil, "", bk)
+	d := New(s, deployFunc, nil, "", bk, false)
 	d.Run(t.Context())
 	assert.False(t, d.IsDeploying())
 
@@ -67,9 +104,9 @@ func TestDeployerSubmit(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
-	d := New(s, deployFunc, nil, "", bk)
+	d := New(s, deployFunc, nil, "", bk, false)
 	d.Run(t.Context())
 	assert.False(t, d.IsDeploying())
 
@@ -134,9 +171,9 @@ func TestDeployerSuspend(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
-	d := New(s, deployFunc, nil, "", bk)
+	d := New(s, deployFunc, nil, "", bk, false)
 	d.Run(t.Context())
 	assert.False(t, d.IsSuspended())
 	d.Suspend("suspended for testing")

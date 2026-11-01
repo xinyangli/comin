@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -62,19 +64,19 @@ func TestDeploymentRetentionMinimal(t *testing.T) {
 		{Uuid: "1", Operation: "switch", Status: "done", Generation: gWithSt("st2"), CreatedAt: secs(1)},
 	}
 
-	_, current, booted, bootEntries, successful, any := retention(dpls, nil, "st1", "st1", 1, 1, 1)
+	_, current, booted, bootEntries, successful, any := retention(dpls, nil, "st1", "st1", 1, 1, 1, false)
 	result := retentionUuids(current, booted, bootEntries, successful, any)
 	expected := []string{"4", "5"}
 	slices.Sort(expected)
 	assert.Equal(t, expected, result)
 
-	_, current, booted, bootEntries, successful, any = retention(dpls, nil, "st1", "st1", 1, 2, 2)
+	_, current, booted, bootEntries, successful, any = retention(dpls, nil, "st1", "st1", 1, 2, 2, false)
 	result = retentionUuids(current, booted, bootEntries, successful, any)
 	expected = []string{"4", "5"}
 	slices.Sort(expected)
 	assert.Equal(t, expected, result)
 
-	_, current, booted, bootEntries, successful, any = retention(dpls, nil, "st1", "st1", 1, 3, 3)
+	_, current, booted, bootEntries, successful, any = retention(dpls, nil, "st1", "st1", 1, 3, 3, false)
 	result = retentionUuids(current, booted, bootEntries, successful, any)
 	expected = []string{"3", "4", "5"}
 	slices.Sort(expected)
@@ -82,7 +84,7 @@ func TestDeploymentRetentionMinimal(t *testing.T) {
 }
 
 func TestDeploymentRetentionInitialization(t *testing.T) {
-	newDpls, current, booted, bootEntries, successful, any := retention([]*protobuf.Deployment{}, nil, "st1", "st2", 3, 3, 5)
+	newDpls, current, booted, bootEntries, successful, any := retention([]*protobuf.Deployment{}, nil, "st1", "st2", 3, 3, 5, false)
 	assert.Equal(t, 2, len(bootEntries))
 	assert.Equal(t, 2, len(successful))
 	assert.Equal(t, 2, len(any))
@@ -93,7 +95,7 @@ func TestDeploymentRetentionInitialization(t *testing.T) {
 	assert.Equal(t, 2, len(newDpls))
 
 	// Ensure this is stable across execution
-	newDpls, current, booted, bootEntries, successful, any = retention(newDpls, nil, "st1", "st2", 3, 3, 5)
+	newDpls, current, booted, bootEntries, successful, any = retention(newDpls, nil, "st1", "st2", 3, 3, 5, false)
 	assert.Equal(t, 2, len(bootEntries))
 	assert.Equal(t, 2, len(successful))
 	assert.Equal(t, 2, len(any))
@@ -111,7 +113,7 @@ func TestDeploymentRetentionInitialization(t *testing.T) {
 			OutPath: "st3",
 		},
 	}
-	newDpls, current, booted, bootEntries, successful, any = retention(newDpls, test, "st1", "st3", 3, 3, 5)
+	newDpls, current, booted, bootEntries, successful, any = retention(newDpls, test, "st1", "st3", 3, 3, 5, false)
 	assert.Equal(t, 2, len(bootEntries))
 	assert.Equal(t, 3, len(successful))
 	assert.Equal(t, 3, len(any))
@@ -142,19 +144,19 @@ func TestDeploymentRetention(t *testing.T) {
 		{Uuid: "1", Operation: "switch", Status: "done", Generation: gWithSt("st2"), CreatedAt: secs(1)},
 	}
 
-	_, current, booted, bootEntries, successful, any := retention(dpls, new, "st1", "st1", 2, 2, 2)
+	_, current, booted, bootEntries, successful, any := retention(dpls, new, "st1", "st1", 2, 2, 2, false)
 	result := retentionUuids(current, booted, bootEntries, successful, any)
 	expected := []string{"1", "4", "5", "6"}
 	slices.Sort(expected)
 	assert.Equal(t, expected, result)
 
-	_, current, booted, bootEntries, successful, any = retention(dpls, new, "st2", "st2", 2, 2, 2)
+	_, current, booted, bootEntries, successful, any = retention(dpls, new, "st2", "st2", 2, 2, 2, false)
 	result = retentionUuids(current, booted, bootEntries, successful, any)
 	expected = []string{"1", "4", "5", "6"}
 	slices.Sort(expected)
 	assert.Equal(t, expected, result)
 
-	_, current, booted, bootEntries, successful, any = retention(dpls, new, "st1", "st2", 1, 1, 1)
+	_, current, booted, bootEntries, successful, any = retention(dpls, new, "st1", "st2", 1, 1, 1, false)
 	result = retentionUuids(current, booted, bootEntries, successful, any)
 	expected = []string{"1", "4", "6"}
 	slices.Sort(expected)
@@ -173,7 +175,7 @@ func TestDeploymentRetention(t *testing.T) {
 		{Uuid: "2", Operation: "boot", Status: "done", Generation: gWithSt("st1"), CreatedAt: secs(2)},
 		{Uuid: "1", Operation: "switch", Status: "done", Generation: gWithSt("st2"), CreatedAt: secs(1)},
 	}
-	_, current, booted, bootEntries, successful, any = retention(dpls, new, "st1", "st1", 2, 7, 7)
+	_, current, booted, bootEntries, successful, any = retention(dpls, new, "st1", "st1", 2, 7, 7, false)
 	result = retentionUuids(current, booted, bootEntries, successful, any)
 	expected = []string{"1", "4", "5", "6", "7", "8", "9", "10", "11"}
 	slices.Sort(expected)
@@ -181,21 +183,57 @@ func TestDeploymentRetention(t *testing.T) {
 	assert.Equal(t, expected, result)
 }
 
+func TestHomeManagerDeploymentPersistence(t *testing.T) {
+	tmp := t.TempDir()
+	filename := filepath.Join(tmp, "store.json")
+	current := filepath.Join(tmp, "current")
+	newGeneration := filepath.Join(tmp, "new")
+	assert.NoError(t, os.MkdirAll(current, 0o755))
+	assert.NoError(t, os.MkdirAll(newGeneration, 0o755))
+	assert.NoError(t, os.WriteFile(filepath.Join(current, "switch-inhibitors"), []byte(`{"old":"value"}`), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(newGeneration, "switch-inhibitors"), []byte(`{"new":"value"}`), 0o600))
+
+	bk := broker.New()
+	bk.Start()
+	s, err := New(bk, filename, filepath.Join(tmp, "gcroots"), 2, 2, 5, true)
+	assert.NoError(t, err)
+	assert.NoError(t, s.Load())
+	assert.Empty(t, s.DeploymentList())
+
+	d := s.NewDeployment(&protobuf.Generation{Uuid: "generation-1", OutPath: newGeneration}, "switch", "", "", current)
+	assert.Equal(t, "switch", d.Operation)
+	assert.Nil(t, d.CurrentInhibitors)
+	assert.Nil(t, d.NewInhibitors)
+	assert.Len(t, s.DeploymentList(), 1)
+	assert.NotEmpty(t, d.Generation.OutPath)
+
+	reloaded, err := New(bk, filename, filepath.Join(tmp, "gcroots"), 2, 2, 5, true)
+	assert.NoError(t, err)
+	assert.NoError(t, reloaded.Load())
+	assert.Len(t, reloaded.DeploymentList(), 1)
+	for _, deployment := range reloaded.DeploymentList() {
+		assert.NotEmpty(t, deployment.Generation.OutPath)
+	}
+	ok, last := reloaded.LastDeployment()
+	assert.True(t, ok)
+	assert.Equal(t, d.Uuid, last.Uuid)
+}
+
 func TestDeploymentCommitAndLoad(t *testing.T) {
 	tmp := t.TempDir()
 	filename := tmp + "/state.json"
 	bk := broker.New()
 	bk.Start()
-	s, _ := New(bk, filename, tmp+"/gcroots", 2, 2, 5)
+	s, _ := New(bk, filename, tmp+"/gcroots", 2, 2, 5, false)
 	s.Commit()
 
-	s1, _ := New(bk, filename, tmp+"/gcroots", 2, 2, 5)
+	s1, _ := New(bk, filename, tmp+"/gcroots", 2, 2, 5, false)
 	err := s1.Load()
 	assert.Nil(t, err)
 	assert.Equal(t, 0, len(s.persisted.Deployments))
 
 	s.NewDeployment(&protobuf.Generation{}, "", "", "", "")
-	s1, _ = New(bk, filename, tmp+"/gcroots", 2, 2, 5)
+	s1, _ = New(bk, filename, tmp+"/gcroots", 2, 2, 5, false)
 	err = s1.Load()
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(s.persisted.Deployments))
@@ -205,7 +243,7 @@ func TestLastDeployment(t *testing.T) {
 	tmp := t.TempDir()
 	bk := broker.New()
 	bk.Start()
-	s, _ := New(bk, "state.json", tmp+"/gcroots", 2, 2, 5)
+	s, _ := New(bk, "state.json", tmp+"/gcroots", 2, 2, 5, false)
 	ok, _ := s.LastDeployment()
 	assert.False(t, ok)
 	s.NewDeployment(&protobuf.Generation{Uuid: "1"}, "", "", "", "")
@@ -219,7 +257,7 @@ func TestNewGeneration(t *testing.T) {
 	tmp := t.TempDir()
 	bk := broker.New()
 	bk.Start()
-	s, _ := New(bk, tmp+"/filename", tmp+"/gcroots", 2, 2, 5)
+	s, _ := New(bk, tmp+"/filename", tmp+"/gcroots", 2, 2, 5, false)
 	s.NewGeneration("hostname", "repositoryDir", "systemAttr", &protobuf.GitRepositoryStatus{}, 0)
 }
 
@@ -259,7 +297,7 @@ func TestGenerationBuildCanceledIsNotAFailure(t *testing.T) {
 	tmp := t.TempDir()
 	bk := broker.New()
 	bk.Start()
-	s, err := New(bk, tmp+"/filename", tmp+"/gcroots", 2, 2, 5)
+	s, err := New(bk, tmp+"/filename", tmp+"/gcroots", 2, 2, 5, false)
 	assert.Nil(t, err)
 
 	g := s.NewGeneration("hostname", "repositoryDir", "systemAttr", &protobuf.GitRepositoryStatus{}, 0)
@@ -291,7 +329,7 @@ func TestGenerationBuildErrorIsAFailure(t *testing.T) {
 	tmp := t.TempDir()
 	bk := broker.New()
 	bk.Start()
-	s, err := New(bk, tmp+"/filename", tmp+"/gcroots", 2, 2, 5)
+	s, err := New(bk, tmp+"/filename", tmp+"/gcroots", 2, 2, 5, false)
 	assert.Nil(t, err)
 
 	g := s.NewGeneration("hostname", "repositoryDir", "systemAttr", &protobuf.GitRepositoryStatus{}, 0)

@@ -67,7 +67,7 @@ func TestBuilderBuild(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	b := New(s, eMock, bk, "", "", "", "my-machine", false, 2*time.Second, 2*time.Second, 0, 30*time.Second, "")
@@ -133,7 +133,7 @@ func TestEval(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	b := New(s, eMock, bk, "", "", "", "", false, 5*time.Second, 5*time.Second, 0, 30*time.Second, "")
@@ -156,7 +156,7 @@ func TestEvalAlreadyBuilt(t *testing.T) {
 	tmp := t.TempDir()
 	bk := broker.New()
 	bk.Start()
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(true)
 	b := New(s, eMock, bk, "", "", "", "", false, 5*time.Second, 5*time.Second, 0, 30*time.Second, "")
@@ -181,7 +181,7 @@ func TestBuilderPreemption(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	b := New(s, eMock, bk, "", "", "", "", false, 5*time.Second, 5*time.Second, 0, 30*time.Second, "")
@@ -193,16 +193,21 @@ func TestBuilderPreemption(t *testing.T) {
 		assert.Equal(c, "commit-1", g.Source.GetGit().SelectedCommitId)
 	}, 2*time.Second, 100*time.Millisecond)
 
-	// Wait for the first evaluation to finish to avoid GC removing generation2
-	eMock.evalDone <- struct{}{}
-	<-b.EvaluationDone
-
 	generation2 := s.NewGeneration("", "", "", &protobuf.GitRepositoryStatus{SelectedCommitId: "commit-2"}, 0)
-	_ = b.Eval(t.Context(), &generation2)
+	err = b.Eval(t.Context(), &generation2)
+	assert.NoError(t, err)
 	assert.True(t, b.isEvaluating.Load())
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		g, _ := b.store.GenerationGet(b.GenerationUuid)
+		g, err := b.store.GenerationGet(b.GenerationUuid)
+		assert.NoError(c, err)
 		assert.Equal(c, "commit-2", g.Source.GetGit().SelectedCommitId)
+	}, 2*time.Second, 100*time.Millisecond)
+
+	eMock.evalDone <- struct{}{}
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		g, err := b.store.GenerationGet(generation2.Uuid)
+		assert.NoError(c, err)
+		assert.Equal(c, store.Evaluated.String(), g.EvalStatus)
 	}, 2*time.Second, 100*time.Millisecond)
 }
 
@@ -210,7 +215,7 @@ func TestBuilderStop(t *testing.T) {
 	tmp := t.TempDir()
 	bk := broker.New()
 	bk.Start()
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	b := New(s, eMock, bk, "", "", "", "", false, 5*time.Second, 5*time.Second, 0, 30*time.Second, "")
@@ -229,7 +234,7 @@ func TestBuilderTimeout(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	b := New(s, eMock, bk, "", "", "", "", false, 1*time.Second, 5*time.Second, 0, 30*time.Second, "")
@@ -247,7 +252,7 @@ func TestBuilderSuspend(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	b := New(s, eMock, bk, "", "", "", "", false, 1*time.Second, 5*time.Second, 0, 30*time.Second, "")
@@ -283,7 +288,7 @@ func TestBuilderPreemptedBuildIsCanceledNotFailed(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 2)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 2, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	b := New(s, eMock, bk, "", "", "", "", false, 5*time.Second, 5*time.Second, 0, 30*time.Second, "")
@@ -320,7 +325,7 @@ func TestBuilderTimedOutBuildIsStillFailed(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	b := New(s, eMock, bk, "", "", "", "", false, 5*time.Second, 1*time.Second, 0, 30*time.Second, "")
@@ -344,7 +349,7 @@ func TestBuilderRetryOnFailure(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	// Create a mock that always fails builds
 	eMock := NewExecutorMock(false)
@@ -390,7 +395,7 @@ func TestBuilderRetryCancelledOnNewEval(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	// Create a mock that always fails builds
 	eMock := NewExecutorMock(false)
@@ -449,7 +454,7 @@ func TestBuilderRetryRespectsAttemptsLimit(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	// Create a mock that always fails builds
 	eMock := NewExecutorMock(false)
@@ -505,7 +510,7 @@ func TestBuilderDoesNotRetryWhenCancelled(t *testing.T) {
 	bk := broker.New()
 	bk.Start()
 
-	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1)
+	s, err := store.New(bk, tmp+"/state.json", tmp+"/gcroots", 1, 1, 1, false)
 	assert.Nil(t, err)
 	eMock := NewExecutorMock(false)
 	// Enable retry with a LONG timer so we can check before it fires

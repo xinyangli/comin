@@ -50,11 +50,22 @@ in
           default = config.networking.hostName;
           defaultText = lib.literalExpression "config.networking.hostName";
           description = ''
-            The name of the configuration to evaluate and deploy.
+            The name of the NixOS or nix-darwin configuration to evaluate and deploy.
             This value is used by comin to evaluate the flake output
             nixosConfigurations."<hostname>" or darwinConfigurations."<hostname>".
+            It is not used to select Home Manager configurations.
             Defaults to networking.hostName - you MUST set either this option
-            or networking.hostName in your configuration.
+            or networking.hostName in your system configuration.
+          '';
+        };
+        homeManagerConfiguration = mkOption {
+          type = types.str;
+          default = "";
+          description = ''
+            The Home Manager flake configuration key to deploy, without the
+            homeConfigurations. prefix or .activationPackage suffix.
+            This is independent of services.comin.hostname and is required
+            for Home Manager deployments.
           '';
         };
         repositoryType = mkOption {
@@ -237,7 +248,7 @@ in
                               "boot"
                             ];
                             default = "switch";
-                            description = "The switch-to-configuration operation to do on this branch.";
+                            description = "The deployment operation for this branch. Home Manager activates on switch and test, and rejects boot.";
                           };
                         };
                       };
@@ -249,8 +260,10 @@ in
                         options = {
                           name = mkOption {
                             type = str;
-                            default = "testing-${config.services.comin.hostname}";
-                            defaultText = lib.literalExpression "testing-\${config.services.comin.hostname}";
+                            default = "testing-${
+                              if cfg.homeManagerConfiguration != "" then cfg.homeManagerConfiguration else cfg.hostname
+                            }";
+                            defaultText = lib.literalExpression ''testing-''${if cfg.homeManagerConfiguration != "" then cfg.homeManagerConfiguration else cfg.hostname}'';
                             description = "The name of the testing branch.";
                           };
                           operation = mkOption {
@@ -260,7 +273,7 @@ in
                               "boot"
                             ];
                             default = "test";
-                            description = "The switch-to-configuration operation to do on this branch.";
+                            description = "The deployment operation for this branch. Home Manager activates on switch and test, and rejects boot.";
                           };
                         };
                       };
@@ -305,7 +318,8 @@ in
             to migrate a configuration from a machine to another
             machine (with different hardware for instance) without
             impacting both.
-            Note it is only used by comin at evaluation.
+            Note it is only used by comin at evaluation for NixOS and
+            nix-darwin configurations; Home Manager deployments ignore it.
           '';
         };
         gpgPublicKeyPaths = mkOption {
